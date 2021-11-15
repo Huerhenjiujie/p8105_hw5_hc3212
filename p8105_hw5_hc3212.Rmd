@@ -81,7 +81,7 @@ read = function(name) {
 Reading the data and tidy it.
 
 ```{r tidy_data}
-df = tibble(
+study_df = tibble(
   filename = list.files("data" )
 ) %>% 
   mutate(outputlist = purrr::map(.x = as.character(filename), ~read(.x))) %>% 
@@ -98,7 +98,7 @@ df = tibble(
 Make the spaghetti plot.
 
 ```{r spaghetti, fig.width=9, message=FALSE, warning=FALSE}
-df %>% 
+study_df %>% 
   pivot_longer(
     cols = week_1:week_8,
     names_to = "week",
@@ -119,9 +119,53 @@ df %>%
 It could find from the graph that most experiment group have higher observation value than the control group.
 
 ## Problem 3
-```{r}
+
+Load iris dataset.
+
+```{r load_data}
+set.seed(10)
+
+iris_with_missing = iris %>% 
+  map_df(~replace(.x, sample(1:150, 20), NA)) %>%
+  mutate(Species = as.character(Species))
+```
+
+Write the function of refill missing data
+
+```{r missing_function}
+missing = function(a) {
+  
+  if(is.numeric(a)){
+    mean_a = round(mean(a, na.rm = TRUE), digits = 2)
+    a = replace_na(a, mean_a)
+  }
+  
+  if (is.character(a)){
+    a = replace_na(a, "virginica")
+  }
+  
+  return(a)
+}
 
 
+```
+
+
+Refill the data, and build new data set
+
+```{r refill_data}
+iris_correct = map(iris_with_missing, missing)
+
+iris_df = 
+  tibble(
+    Sepal.Length = iris_correct[["Sepal.Length"]],
+    Sepal.Width = iris_correct[["Sepal.Width"]],
+    Petal.Length = iris_correct[["Petal.Length"]],
+    Petal.Width = iris_correct[["Petal.Width"]],
+    Species = iris_correct[["Species"]]
+  )
+
+iris_df
 
 ```
 
