@@ -1,0 +1,128 @@
+---
+title: "p8105_hw5_hc3212"
+author: "Hening CUi"
+date: "11/14/2021"
+output: github_document
+---
+
+```{r,echo = FALSE, message = FALSE}
+library (tidyverse)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = 0.6,
+  out.width = "90%"
+)
+
+options(
+  ggplot2.continuous.color = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_color_discrete = scale_color_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 1
+
+
+
+Now run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
+
+Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. Organize cities according to the proportion of unsolved homicides.
+
+```{r read_data}
+homo_df =
+  read.csv("homicide-data.csv") 
+```
+
+The Washington Post collected data of criminal homicides over the past decade in different cities. The data set has `r nrow(homo_df)` cases, and `r ncol(homo_df)` variables which included the time, location and type of the killing, whether an arrest was made and basic demographic information about each victim.
+
+```{r clean_data }
+homo_clean =
+  homo_df %>% 
+  mutate(city_state = str_c(city, ",", state)) %>% 
+  select(-city, -state) %>% 
+  filter(disposition %in% c("Closed without arrest", "Open/No arrest")) %>% 
+  group_by(city_state, disposition) %>% 
+  summarize (total = n()) 
+  
+homo_clean %>% 
+  pivot_wider(
+    names_from = disposition,
+    values_from = total
+  ) %>% 
+  knitr::kable()
+```
+
+For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
+
+
+```{r}
+homo_clean %>% 
+  filter(city_state == "Baltimore,MD") %>% 
+  select(-city_state) 
+```
+
+## Problem 2
+
+Creat a function to read data.
+
+```{r read_data_function}
+read = function(name) {
+  path = str_c("./data/", name)
+  obser = read.csv(path)
+  return(obser)
+}
+```
+
+Reading the data and tidy it.
+
+```{r tidy_data}
+df = tibble(
+  filename = list.files("data" )
+) %>% 
+  mutate(outputlist = purrr::map(.x = as.character(filename), ~read(.x))) %>% 
+  unnest(outputlist) %>% 
+  mutate(subject_ID = substr(filename, 1, 6 ),
+           arm = substr(filename, 1, 3)) %>% 
+  select(-filename) %>% 
+  relocate(subject_ID, arm) %>% 
+  janitor::clean_names() %>% 
+  drop_na()
+  
+```
+
+Make the spaghetti plot.
+
+```{r spaghetti, fig.width=9, message=FALSE, warning=FALSE}
+df %>% 
+  pivot_longer(
+    cols = week_1:week_8,
+    names_to = "week",
+    values_to = "value"
+  ) %>% 
+  mutate(week = substr(week, 6, 6)) %>% 
+  #group_by(subject_id) %>% 
+  ggplot(aes(x = as.numeric(week), y = value, color = as.factor(subject_id))) +
+  geom_line() + geom_point(aes(shape = as.factor(arm)), size = 2.5, alpha = 0.5) +
+  labs(
+    title = "The obervation of subject over time",
+    y = "obervation value", 
+    x = "Week",
+    ) +
+  scale_colour_hue("Subject_id")+
+  scale_shape("Arm")
+```
+It could find from the graph that most experiment group have higher observation value than the control group.
+
+## Problem 3
+```{r}
+
+
+
+```
+
+
