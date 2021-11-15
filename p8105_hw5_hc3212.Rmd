@@ -27,44 +27,119 @@ scale_fill_discrete = scale_fill_viridis_d
 
 ## Problem 1
 
-
-
-Now run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
-
-Create a plot that shows the estimates and CIs for each city – check out geom_errorbar for a way to add error bars based on the upper and lower limits. Organize cities according to the proportion of unsolved homicides.
+Read in the homocide data.
 
 ```{r read_data}
 homo_df =
-  read.csv("homicide-data.csv") 
+  read.csv("homicide-data.csv", na = c("", "Unknown")) 
 ```
 
 The Washington Post collected data of criminal homicides over the past decade in different cities. The data set has `r nrow(homo_df)` cases, and `r ncol(homo_df)` variables which included the time, location and type of the killing, whether an arrest was made and basic demographic information about each victim.
 
-```{r clean_data }
+```{r clean_data}
 homo_clean =
   homo_df %>% 
-  mutate(city_state = str_c(city, ",", state)) %>% 
-  select(-city, -state) %>% 
-  filter(disposition %in% c("Closed without arrest", "Open/No arrest")) %>% 
-  group_by(city_state, disposition) %>% 
-  summarize (total = n()) 
-  
+  mutate(city_state = str_c(city, ",", state),
+         resolution = case_when(
+           disposition == "Closed without arrest" ~ "unsolved",
+           disposition == "Open/No arrest" ~ "unsolved",
+           disposition == "Closed by arrest" ~ "solved"
+         )) %>% 
+  relocate(city_state) %>% 
+  filter(city_state != "Tulsa,AL") 
+
 homo_clean %>% 
-  pivot_wider(
-    names_from = disposition,
-    values_from = total
-  ) %>% 
+  select(-city, -state) %>% 
+  group_by(city_state) %>% 
+  summarize(unsolved = sum(resolution == "unsolved"),
+            n = n()) %>% 
   knitr::kable()
 ```
 
-For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
-
+Done the prop test of Baltimore, MD.
 
 ```{r}
-homo_clean %>% 
-  filter(city_state == "Baltimore,MD") %>% 
-  select(-city_state) 
+balti_df =
+  homo_clean %>% 
+  filter(city_state == "Baltimore,MD")
+
+balti_summary =     
+  balti_df %>% 
+  summarize(unsolved = sum(resolution == "unsolved"),
+            n = n())
+
+balti_test =
+  prop.test(x = balti_summary %>% pull(unsolved), 
+          n = balti_summary %>% pull(n))
+
+balti_test %>% 
+  broom::tidy()
 ```
+Now get test for each city.
+
+Write the function first.
+
+```{r prop_function}
+prop_test_function = function(city_df){
+  city_summary =     
+    city_df %>% 
+    summarize(unsolved = sum(resolution == "unsolved"),
+              n = n())
+
+  city_test =
+    prop.test(x = city_summary %>% pull(unsolved), 
+              n = city_summary %>% pull(n))
+
+  return(city_test)
+}
+```
+
+Lets run thorough other cities.
+
+
+```{r iterate_through_city, warning = FALSE}
+result_df =
+  homo_clean %>% 
+  nest(data = uid:resolution) %>% 
+  mutate(
+    test_res = map(data, prop_test_function),
+    tidy_res = map(test_res, broom::tidy)
+  ) %>% 
+  select(city_state, tidy_res) %>% 
+  unnest(tidy_res) %>% 
+  select(city_state, estimate, starts_with("conf"))
+```
+
+```{r another_method}
+also_res_df =
+  homo_clean %>% 
+  select(-city, -state) %>% 
+  group_by(city_state) %>% 
+  summarize(unsolved = sum(resolution == "unsolved"),
+            n = n()) %>% 
+  mutate(test_res = map2(unsolved, n, prop.test),
+         tidy_res = map(test_res, broom::tidy)
+  ) %>% 
+  select(city_state, tidy_res) %>% 
+  unnest(tidy_res) %>% 
+  select(city_state, estimate, starts_with("conf"))
+```
+
+Now create the plots!
+
+```{r bar_plot}
+result_df %>% 
+  mutate(city_state = fct_reorder(city_state, estimate)) %>% 
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+
+
+
 
 ## Problem 2
 
@@ -91,7 +166,13 @@ study_df = tibble(
   select(-filename) %>% 
   relocate(subject_ID, arm) %>% 
   janitor::clean_names() %>% 
-  drop_na()
+  drop_na() %>% 
+  pivot_longer(
+    cols = week_1:week_8,
+    names_to = "week",
+    values_to = "value"
+  ) %>% 
+  mutate(week = substr(week, 6, 6))
   
 ```
 
@@ -99,13 +180,6 @@ Make the spaghetti plot.
 
 ```{r spaghetti, fig.width=9, message=FALSE, warning=FALSE}
 study_df %>% 
-  pivot_longer(
-    cols = week_1:week_8,
-    names_to = "week",
-    values_to = "value"
-  ) %>% 
-  mutate(week = substr(week, 6, 6)) %>% 
-  #group_by(subject_id) %>% 
   ggplot(aes(x = as.numeric(week), y = value, color = as.factor(subject_id))) +
   geom_line() + geom_point(aes(shape = as.factor(arm)), size = 2.5, alpha = 0.5) +
   labs(
@@ -133,18 +207,18 @@ iris_with_missing = iris %>%
 Write the function of refill missing data
 
 ```{r missing_function}
-missing = function(a) {
+missing = function(miss) {
   
-  if(is.numeric(a)){
-    mean_a = round(mean(a, na.rm = TRUE), digits = 2)
-    a = replace_na(a, mean_a)
+  if(is.numeric(miss)){
+    mean_miss = round(mean(miss, na.rm = TRUE), digits = 2)
+    miss = replace_na(miss, mean_miss)
   }
   
-  if (is.character(a)){
-    a = replace_na(a, "virginica")
+  if (is.character(miss)){
+    miss = replace_na(miss, "virginica")
   }
   
-  return(a)
+  return(miss)
 }
 
 
@@ -154,19 +228,10 @@ missing = function(a) {
 Refill the data, and build new data set
 
 ```{r refill_data}
-iris_correct = map(iris_with_missing, missing)
+iris_correct = map(iris_with_missing, missing) %>% 
+  bind_cols()
 
-iris_df = 
-  tibble(
-    Sepal.Length = iris_correct[["Sepal.Length"]],
-    Sepal.Width = iris_correct[["Sepal.Width"]],
-    Petal.Length = iris_correct[["Petal.Length"]],
-    Petal.Width = iris_correct[["Petal.Width"]],
-    Species = iris_correct[["Species"]]
-  )
-
-iris_df
-
+iris_correct
 ```
 
 
