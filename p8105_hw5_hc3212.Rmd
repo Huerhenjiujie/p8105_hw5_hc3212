@@ -189,8 +189,10 @@ study_df %>%
     x = "Week",
     ) +
   scale_colour_hue("Subject_id")+
-  scale_shape("Arm")
+  scale_shape(name = "Arm",
+              labels = c("control", "experiment")) 
 ```
+
 It could find from the graph that most experiment group have higher observation value than the control group.
 
 ## Problem 3
